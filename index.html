@@ -1157,30 +1157,90 @@ function drawChart(){
       ctx.beginPath();ctx.moveTo(0,yL);ctx.lineTo(W-46,yL);ctx.stroke();ctx.setLineDash([]);
     }
   }
-  // Prediction overlay
+  // ── PREDICTION OVERLAY ──
   if(predOverlay){
-    const pr=predOverlay;
+    const pr=predOverlay;const isL=pr.prediction==='LONG',isS=pr.prediction==='SHORT';
+    const pCol=isL?'38,166,154':isS?'239,83,80':'120,130,160';
+
+    // Predicted range shading
     if(pr.predicted_range_high&&pr.predicted_range_low){
-      const yH=pY(pr.predicted_range_high),yL=pY(pr.predicted_range_low);
-      const iL=pr.prediction==='LONG';
-      ctx.fillStyle=iL?'rgba(38,166,154,.06)':'rgba(239,83,80,.06)';ctx.fillRect(0,yH,W-46,yL-yH);
+      const yH=Math.max(padTop,pY(pr.predicted_range_high));
+      const yL=Math.min(padTop+chartH,pY(pr.predicted_range_low));
+      ctx.fillStyle=`rgba(${pCol},.05)`;
+      ctx.fillRect(0,yH,W-46,yL-yH);
+      // Range border
+      [pr.predicted_range_high,pr.predicted_range_low].forEach((lvl,i)=>{
+        if(lvl<minP||lvl>maxP)return;
+        const y=Math.round(pY(lvl))+.5;
+        ctx.strokeStyle=`rgba(${pCol},.2)`;ctx.lineWidth=.7;ctx.setLineDash([2,4]);
+        ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(W-46,y);ctx.stroke();ctx.setLineDash([]);
+        ctx.fillStyle=`rgba(${pCol},.6)`;ctx.font='8px -apple-system';ctx.textAlign='right';
+        ctx.fillText(i===0?'Pred H':'Pred L',W-48,y+(i===0?-2:9));
+      });
     }
-    (pr.key_levels||[]).forEach(level=>{
-      if(level.price<minP||level.price>maxP)return;
-      const y=Math.round(pY(level.price))+.5;
-      const col=level.type==='support'?'rgba(38,166,154,.45)':level.type==='entry'?'rgba(68,138,255,.45)':'rgba(239,83,80,.45)';
-      ctx.strokeStyle=col;ctx.lineWidth=.8;ctx.setLineDash([3,4]);
+
+    // Key S/R levels (faint dashed)
+    (pr.key_levels||[]).forEach(l=>{
+      if(!l.price||l.price<minP||l.price>maxP)return;
+      const y=Math.round(pY(l.price))+.5;
+      const lc=l.type==='support'?'38,166,154':l.type==='entry'?'68,138,255':l.type==='pivot'?'171,71,188':'239,83,80';
+      ctx.strokeStyle=`rgba(${lc},.35)`;ctx.lineWidth=.6;ctx.setLineDash([2,5]);
       ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(W-46,y);ctx.stroke();ctx.setLineDash([]);
-      ctx.fillStyle=col;ctx.font='8px -apple-system';ctx.textAlign='left';ctx.fillText(level.label,3,y-2);
+      ctx.fillStyle=`rgba(${lc},.7)`;ctx.font='8px -apple-system';ctx.textAlign='left';
+      ctx.fillText(l.label,3,y-2);
     });
+
+    // Invalidation level (orange)
+    if(pr.invalidation_level&&pr.invalidation_level>=minP&&pr.invalidation_level<=maxP){
+      const y=Math.round(pY(pr.invalidation_level))+.5;
+      ctx.strokeStyle='rgba(255,107,53,.6)';ctx.lineWidth=1;ctx.setLineDash([3,3]);
+      ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(W-46,y);ctx.stroke();ctx.setLineDash([]);
+      const tag='INVAL '+fP(pr.invalidation_level,true),tw=ctx.measureText(tag).width;
+      ctx.fillStyle='rgba(255,107,53,.85)';ctx.fillRect(W-tw-7,y-8,tw+5,12);
+      ctx.fillStyle='#fff';ctx.font='bold 7px -apple-system';ctx.textAlign='left';ctx.fillText(tag,W-tw-4,y+1);
+    }
+
+    // SL (red solid)
+    if(pr.stop_loss&&pr.stop_loss>=minP&&pr.stop_loss<=maxP){
+      const y=Math.round(pY(pr.stop_loss))+.5;
+      ctx.strokeStyle='rgba(239,83,80,.85)';ctx.lineWidth=1.2;ctx.setLineDash([]);
+      ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(W-46,y);ctx.stroke();
+      const tag='SL '+fP(pr.stop_loss,true),tw=ctx.measureText(tag).width;
+      ctx.fillStyle='#EF5350';ctx.fillRect(W-tw-7,y-8,tw+5,12);
+      ctx.fillStyle='#fff';ctx.font='bold 7px -apple-system';ctx.textAlign='left';ctx.fillText(tag,W-tw-4,y+1);
+    }
+
+    // TP levels (graduated green, thicker = closer)
+    const tpTargets=pr.targets||[];
+    tpTargets.forEach((tp,i)=>{
+      if(!tp.price||tp.price<minP||tp.price>maxP)return;
+      const y=Math.round(pY(tp.price))+.5;
+      const alpha=0.9-i*0.2;
+      const dash=i===0?[]:i===1?[4,3]:[2,4];
+      ctx.strokeStyle=`rgba(38,166,154,${alpha})`;
+      ctx.lineWidth=1.5-i*0.3;ctx.setLineDash(dash);
+      ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(W-46,y);ctx.stroke();ctx.setLineDash([]);
+      const tag=`${tp.label||'TP'+(i+1)} ${fP(tp.price,true)} ${tp.probability?tp.probability+'%':''}`;
+      const tw=ctx.measureText(tag).width;
+      const gc=`rgba(${38+i*10},${150+i*8},${154-i*20},1)`;
+      ctx.fillStyle=gc;ctx.fillRect(W-tw-7,y-8,tw+5,12);
+      ctx.fillStyle='#fff';ctx.font='bold 7px -apple-system';ctx.textAlign='left';ctx.fillText(tag,W-tw-4,y+1);
+    });
+
+    // Entry limit (blue solid, most prominent)
     if(pr.entry_limit&&pr.entry_limit>=minP&&pr.entry_limit<=maxP){
       const y=Math.round(pY(pr.entry_limit))+.5;
-      ctx.strokeStyle='rgba(68,138,255,.8)';ctx.lineWidth=1.2;ctx.setLineDash([]);
-      ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(W-48,y);ctx.stroke();
-      const tag='E:'+fP(pr.entry_limit,true),tw=ctx.measureText(tag).width;
-      ctx.fillStyle='#448AFF';ctx.fillRect(W-tw-7,y-8,tw+5,13);
-      ctx.fillStyle='#fff';ctx.font='bold 8px -apple-system';ctx.textAlign='left';ctx.fillText(tag,W-tw-4,y+1);
+      ctx.strokeStyle='rgba(68,138,255,.95)';ctx.lineWidth=1.5;ctx.setLineDash([]);
+      ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(W-46,y);ctx.stroke();
+      const tag='ENTRY '+fP(pr.entry_limit,true),tw=ctx.measureText(tag).width;
+      ctx.fillStyle='#448AFF';ctx.fillRect(W-tw-7,y-8,tw+5,12);
+      ctx.fillStyle='#fff';ctx.font='bold 7px -apple-system';ctx.textAlign='left';ctx.fillText(tag,W-tw-4,y+1);
     }
+
+    // Prediction label on chart
+    ctx.fillStyle=`rgba(${pCol},.85)`;ctx.font='bold 9px -apple-system';ctx.textAlign='left';
+    const pTag=`${isL?'▲':isS?'▼':'—'} ${pr.prediction} ${pr.confidence||'?'}/10 ${pr.source==='ai'?'AI':'Tech'}`;
+    ctx.fillText(pTag,4,padTop+12);
   }
   // Live price tag
   if(S.livePrice>0&&S.livePrice>=minP&&S.livePrice<=maxP){
